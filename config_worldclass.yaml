@@ -1,0 +1,410 @@
+# ============================================================================
+# WORLD-CLASS TRADING BOT CONFIGURATION
+# ============================================================================
+# Inspired by: Freqtrade, Jesse, QuantConnect, Catalyst
+# Features: Multi-timeframe, Ensemble ML, Professional Risk Management
+# ============================================================================
+
+# Random seed for reproducibility
+seed: 42
+
+# ============================================================================
+# DATA CONFIGURATION
+# ============================================================================
+data:
+  # Primary trading pair
+  primary_pair: "BTCUSDT"
+  
+  # Secondary pairs for correlation analysis
+  correlation_pairs:
+    - "ETHUSDT"
+    - "BNBUSDT"
+    - "SOLUSDT"
+  
+  # Multi-timeframe configuration
+  timeframes:
+    primary: "1m"      # Primary execution timeframe
+    analysis:          # Higher timeframes for trend analysis
+      - "5m"
+      - "15m"
+      - "1h"
+      - "4h"
+  
+  # Historical data
+  history_days: 90
+  
+  # Directories
+  cache_dir: "data/raw"
+  processed_dir: "data/processed"
+  models_dir: "models/saved"
+  logs_dir: "logs"
+
+# ============================================================================
+# FEATURES ENGINEERING (Multi-Timeframe)
+# ============================================================================
+features:
+  # Price action features
+  returns_horizons: [1, 3, 5, 10, 15, 30, 60]  # minutes
+  
+  # Volatility features
+  volatility_windows: [5, 15, 30, 60, 240]  # minutes
+  volatility_method: "parkinson"  # More robust than simple std
+  
+  # Volume features
+  volume_windows: [5, 15, 30, 60, 240]
+  volume_profile: true  # VPOC, VAH, VAL
+  
+  # Order book features (REAL data from Binance)
+  use_orderbook: true
+  orderbook_depth: 20  # Top 20 levels
+  orderbook_features:
+    - "bid_ask_spread"
+    - "order_imbalance"
+    - "book_pressure"
+    - "depth_imbalance"
+    - "weighted_mid_price"
+    - "microprice"  # Best estimate of fair price
+  
+  # Market microstructure
+  microstructure:
+    - "effective_spread"
+    - "realized_spread"
+    - "price_impact"
+    - "amihud_illiquidity"
+    - "roll_measure"
+  
+  # Technical indicators (multi-timeframe)
+  use_indicators: true
+  indicators:
+    # Trend
+    - name: "ema"
+      periods: [9, 21, 50, 200]
+      timeframes: ["1m", "15m", "1h", "4h"]
+    - name: "macd"
+      timeframes: ["15m", "1h"]
+    - name: "adx"
+      period: 14
+      timeframes: ["15m", "1h"]
+    
+    # Momentum
+    - name: "rsi"
+      period: 14
+      timeframes: ["1m", "15m", "1h"]
+    - name: "stoch_rsi"
+      timeframes: ["15m", "1h"]
+    - name: "mfi"  # Money Flow Index
+      period: 14
+      timeframes: ["15m", "1h"]
+    
+    # Volatility
+    - name: "bbands"
+      period: 20
+      std: 2
+      timeframes: ["15m", "1h"]
+    - name: "atr"
+      period: 14
+      timeframes: ["1m", "15m", "1h"]
+    - name: "keltner"
+      timeframes: ["15m", "1h"]
+    
+    # Volume
+    - name: "obv"  # On-Balance Volume
+      timeframes: ["15m", "1h"]
+    - name: "cmf"  # Chaikin Money Flow
+      timeframes: ["15m", "1h"]
+    - name: "vwap"
+      timeframes: ["1m", "15m", "1h"]
+  
+  # Cross-asset features
+  use_cross_asset: true
+  cross_asset_features:
+    - "correlation_eth"
+    - "correlation_bnb"
+    - "correlation_sol"
+    - "btc_dominance_proxy"
+    - "spread_eth_btc"
+  
+  # Market regime detection
+  regime_detection:
+    enabled: true
+    methods:
+      - "volatility_regime"  # low/med/high vol
+      - "trend_regime"       # trending/ranging
+      - "liquidity_regime"   # liquid/illiquid
+    lookback: 1440  # 24 hours
+
+# ============================================================================
+# TARGET DEFINITION
+# ============================================================================
+target:
+  # Multi-horizon prediction
+  horizons: [5, 15, 30, 60]  # minutes
+  
+  # Primary horizon for trading
+  primary_horizon: 15  # 15-minute moves (more predictable than 5m)
+  
+  # Thresholds (wider for 15m)
+  up_threshold: 0.0015    # 0.15%
+  down_threshold: -0.0015
+  
+  # Class balancing
+  balance_classes: false  # Use class weights instead
+  use_sample_weights: true
+
+# ============================================================================
+# ENSEMBLE MODELS
+# ============================================================================
+models:
+  # Ensemble configuration
+  ensemble:
+    enabled: true
+    method: "weighted_voting"  # or "stacking"
+    weights:
+      lightgbm: 0.35
+      xgboost: 0.35
+      catboost: 0.20
+      lstm: 0.10
+  
+  # LightGBM (fast, accurate)
+  lightgbm:
+    n_estimators: 500
+    learning_rate: 0.03
+    max_depth: 8
+    num_leaves: 127
+    min_child_samples: 100
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_alpha: 0.1
+    reg_lambda: 1.0
+    importance_type: "gain"
+  
+  # XGBoost (robust)
+  xgboost:
+    n_estimators: 500
+    learning_rate: 0.03
+    max_depth: 8
+    min_child_weight: 5
+    subsample: 0.8
+    colsample_bytree: 0.8
+    gamma: 0.1
+    reg_alpha: 0.1
+    reg_lambda: 1.0
+  
+  # CatBoost (handles categoricals well)
+  catboost:
+    iterations: 500
+    learning_rate: 0.03
+    depth: 8
+    l2_leaf_reg: 3.0
+    random_strength: 0.5
+    bagging_temperature: 0.2
+  
+  # LSTM (for sequence learning)
+  lstm:
+    hidden_size: 128
+    num_layers: 2
+    dropout: 0.3
+    bidirectional: true
+    attention: true
+
+# ============================================================================
+# TRAINING
+# ============================================================================
+training:
+  # Walk-forward optimization
+  walk_forward:
+    enabled: true
+    train_period: 60  # days
+    test_period: 7    # days
+    step: 7           # days (rolling window)
+  
+  # Cross-validation
+  cv_splits: 5
+  cv_method: "time_series_split"
+  
+  # Early stopping
+  early_stopping: true
+  patience: 50
+  
+  # Loss function
+  loss_type: "focal"  # Better for imbalanced data
+  focal_alpha: 0.25
+  focal_gamma: 2.0
+  
+  # Optimization
+  optimizer: "adam"
+  learning_rate: 0.001
+  lr_scheduler: "cosine"
+  weight_decay: 0.0001
+  
+  # Regularization
+  dropout: 0.3
+  gradient_clip: 1.0
+
+# ============================================================================
+# RISK MANAGEMENT (Professional Grade)
+# ============================================================================
+risk:
+  # Capital management
+  initial_capital: 10000
+  max_position_size: 0.25  # Max 25% of capital per trade
+  
+  # Position sizing
+  sizing_method: "kelly"  # Kelly Criterion with fractional sizing
+  kelly_fraction: 0.25    # Use 25% of Kelly recommendation
+  
+  # Portfolio risk limits
+  max_portfolio_heat: 0.06  # Max 6% of capital at risk at once
+  max_correlation_exposure: 0.3  # Limit correlated positions
+  
+  # Trade-level risk
+  stop_loss: 0.01      # 1% stop loss
+  take_profit: 0.03    # 3% take profit (3:1 reward/risk)
+  trailing_stop: 0.005 # 0.5% trailing stop
+  
+  # Drawdown protection
+  max_daily_loss: 0.02    # Stop trading if -2% today
+  max_drawdown: 0.15      # Stop trading if -15% from peak
+  
+  # Trade filtering
+  min_confidence: 0.65    # Min model confidence
+  min_sharpe: 0.5         # Min Sharpe ratio for strategy
+  min_win_rate: 0.45      # Min acceptable win rate
+  
+  # Market conditions filter
+  min_liquidity: 1000000  # Min 1M USDT 24h volume
+  max_volatility: 0.05    # Max 5% hourly volatility
+  avoid_news_events: true
+
+# ============================================================================
+# EXECUTION (Live Trading)
+# ============================================================================
+execution:
+  # Exchange
+  exchange: "binance"
+  testnet: true  # Use testnet first!
+  
+  # Order types
+  order_type: "limit"  # limit or market
+  limit_offset: 0.0001  # 0.01% from current price
+  
+  # Timeouts
+  order_timeout: 60  # seconds
+  cancel_timeout: 5
+  
+  # Slippage protection
+  max_slippage: 0.001  # 0.1%
+  
+  # Trading costs
+  maker_fee: 0.001   # 0.1% Binance maker fee
+  taker_fee: 0.001   # 0.1% Binance taker fee
+
+# ============================================================================
+# MONITORING & ALERTS
+# ============================================================================
+monitoring:
+  # Logging
+  log_level: "INFO"
+  log_to_file: true
+  log_trades: true
+  
+  # Performance tracking
+  track_metrics:
+    - "total_return"
+    - "sharpe_ratio"
+    - "max_drawdown"
+    - "win_rate"
+    - "profit_factor"
+    - "expectancy"
+    - "recovery_factor"
+  
+  # Alerts (Telegram, Discord, Email)
+  alerts:
+    enabled: true
+    channels:
+      telegram:
+        enabled: false
+        bot_token: ""
+        chat_id: ""
+      discord:
+        enabled: false
+        webhook_url: ""
+      email:
+        enabled: false
+        smtp_server: ""
+        from_email: ""
+        to_email: ""
+    
+    # Alert triggers
+    on_trade_open: true
+    on_trade_close: true
+    on_daily_pnl: true
+    on_drawdown: true
+    on_error: true
+  
+  # Dashboards
+  use_streamlit: true  # Real-time web dashboard
+  use_wandb: true      # ML experiment tracking
+  
+  # Database (for historical tracking)
+  database:
+    enabled: true
+    type: "sqlite"  # or "postgresql"
+    path: "data/trading.db"
+
+# ============================================================================
+# BACKTESTING
+# ============================================================================
+backtest:
+  # Realism settings
+  realistic_slippage: true
+  realistic_fees: true
+  realistic_orderbook: true  # Simulate order book depth
+  
+  # Market impact modeling
+  market_impact: true
+  impact_coefficient: 0.0001
+  
+  # Monte Carlo simulation
+  monte_carlo:
+    enabled: true
+    n_simulations: 1000
+    
+  # Optimization
+  optimize_parameters: true
+  optimization_metric: "sharpe_ratio"
+  optimization_method: "bayesian"  # Bayesian optimization
+
+# ============================================================================
+# ADVANCED FEATURES
+# ============================================================================
+advanced:
+  # Online learning (adapt to market changes)
+  online_learning:
+    enabled: true
+    update_frequency: "daily"
+    min_samples: 100
+  
+  # Feature importance tracking
+  track_feature_importance: true
+  prune_features: true
+  importance_threshold: 0.001
+  
+  # Regime-specific models
+  regime_specific_models: true
+  
+  # Market sentiment analysis
+  sentiment_analysis:
+    enabled: false  # Requires additional APIs
+    sources:
+      - "twitter"
+      - "reddit"
+      - "news"
+  
+  # Order flow toxicity detection
+  detect_toxic_flow: true
+  
+  # Front-running protection
+  randomize_timing: true
+  max_delay: 2  # seconds
+

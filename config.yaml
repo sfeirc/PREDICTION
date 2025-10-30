@@ -1,0 +1,162 @@
+# Short-Horizon Crypto Price Prediction - Configuration
+
+# Data settings
+data:
+  symbols: ["BTCUSDT", "ETHUSDT"]
+  train_symbol: "BTCUSDT"
+  test_symbol: "ETHUSDT"
+  interval: "1m"
+  days: 30
+  cache_dir: "data/raw"
+  processed_dir: "data/processed"
+
+# Target settings
+target:
+  forward_minutes: 5
+  up_threshold: 0.002    # +0.2% (wider dead zone for cleaner labels)
+  down_threshold: -0.002 # -0.2%
+  # samples with returns between thresholds are dropped
+  
+  # Multi-task learning - predict multiple horizons
+  multi_horizon: true
+  horizons: [5, 10, 15]  # minutes
+  
+  # Class balancing
+  balance_classes: true
+  balancing_method: "downsample"  # "downsample" or "weights"
+
+# Feature engineering
+features:
+  returns_horizons: [1, 3, 5, 15, 30]  # minutes
+  volatility_windows: [5, 15, 60, 240]  # minutes (1h, 4h for regime detection)
+  volume_windows: [5, 15, 60]           # minutes
+  use_vwap: true
+  use_rsi: true
+  rsi_period: 14
+  use_bollinger: true
+  bollinger_period: 20
+  bollinger_std: 2
+  
+  # Market microstructure features
+  use_orderbook: true   # fetch order book depth from Binance
+  orderbook_depth: 5    # top 5 levels
+  
+  # Time-of-day features
+  use_time_features: true  # hour, minute, day-of-week
+  
+  # Cross-asset features (if multiple symbols)
+  use_cross_asset: true
+  
+  # Event-based sampling
+  event_based_sampling: true
+  event_thresholds:
+    volume_spike: 2.0      # volume / MA(volume) > 2.0
+    volatility_spike: 1.5  # vol / MA(vol) > 1.5
+    spread_compression: 0.5  # spread < 0.5 * MA(spread)
+
+# Sequence settings
+sequence:
+  lookback_minutes: 30  # use last 30 minutes to predict next 5
+
+# Train/val/test split (time-based)
+split:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+# Regime detection (for ablation)
+regime:
+  enabled: true
+  volatility_window: 1440  # 24h in minutes
+  low_percentile: 33
+  high_percentile: 67
+
+# Model hyperparameters
+models:
+  logistic:
+    C: 1.0
+    max_iter: 1000
+    class_weight: "balanced"
+  
+  random_forest:
+    n_estimators: 100
+    max_depth: 10
+    min_samples_split: 50
+    class_weight: "balanced"
+    n_jobs: -1
+  
+  lightgbm:
+    n_estimators: 200
+    max_depth: 8
+    learning_rate: 0.05
+    num_leaves: 64
+    min_child_samples: 50
+    subsample: 0.8
+    colsample_bytree: 0.8
+    class_weight: "balanced"
+  
+  xgboost:
+    n_estimators: 200
+    max_depth: 8
+    learning_rate: 0.05
+    min_child_weight: 50
+    subsample: 0.8
+    colsample_bytree: 0.8
+    scale_pos_weight: 1.0  # computed from class imbalance
+  
+  lstm:
+    hidden_size: 128
+    num_layers: 2
+    dropout: 0.2
+    bidirectional: false
+  
+  transformer:
+    d_model: 128
+    nhead: 4
+    num_layers: 3
+    dim_feedforward: 512
+    dropout: 0.1
+
+# Training settings
+training:
+  batch_size: 256
+  epochs: 50
+  learning_rate: 0.001
+  weight_decay: 1e-5
+  early_stopping_patience: 10
+  lr_scheduler: true
+  scheduler_factor: 0.5
+  scheduler_patience: 5
+  grad_clip: 1.0
+  
+  # Loss function
+  loss_type: "focal"  # "cross_entropy", "focal", or "label_smoothing"
+  focal_alpha: 0.25
+  focal_gamma: 2.0
+  label_smoothing: 0.1
+  
+  # Confidence-based filtering
+  min_confidence: 0.6  # only evaluate predictions with confidence > 0.6
+
+# Evaluation
+evaluation:
+  metrics: ["accuracy", "auroc", "f1", "precision", "recall", "directional_accuracy"]
+  baseline: "random"  # compare against random 50% baseline
+  per_day_metrics: true  # track metrics per day
+  per_regime_metrics: true  # track metrics per volatility regime
+  
+  # Trading simulation
+  simulate_trading: true
+  trading_cost: 0.001  # 0.1% per trade (taker fee)
+
+# Logging
+logging:
+  log_dir: "logs"
+  use_wandb: true
+  wandb_project: "crypto-price-prediction"
+  checkpoint_dir: "checkpoints"
+  save_best_only: true
+
+# Reproducibility
+seed: 42
+
