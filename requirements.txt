@@ -25,8 +25,6 @@ xgboost>=2.0.0
 
 # Technical indicators
 ta>=0.11.0
-pandas-ta
-ta>=0.10.2>=0.3.14b
 
 # Visualization
 matplotlib>=3.7.0

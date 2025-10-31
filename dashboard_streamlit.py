@@ -20,7 +20,8 @@ from datetime import datetime, timedelta
 import sys
 import io
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+# Remove stdout reassignment (incompatible with Streamlit runtime)
+# sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 # Page config
 st.set_page_config(
@@ -56,7 +57,7 @@ class TradingDashboard:
     def load_data(self):
         """Load or generate demo data"""
         # Demo data (replace with real data from your bot)
-        dates = pd.date_range(end=datetime.now(), periods=100, freq='H')
+        dates = pd.date_range(end=datetime.now(), periods=100, freq='h')
         
         self.portfolio_value = pd.Series(
             10000 * (1 + np.cumsum(np.random.randn(100) * 0.02)),

@@ -81,22 +81,17 @@ class BayesianOptimizer:
         Balances exploration vs exploitation.
         """
         if len(self.y_samples) == 0:
-            return np.zeros(len(X))
-        
-        # Predict mean and std
+            return np.zeros(X.shape[0])
+        # Predict mean and std (1D arrays)
         mu, sigma = self.gp.predict(X, return_std=True)
-        sigma = sigma.reshape(-1, 1)
-        
-        # Best observed value
-        f_best = np.max(self.y_samples)
-        
-        # Expected improvement
-        with np.errstate(divide='warn'):
-            improvement = mu - f_best - xi
-            Z = improvement / sigma
-            ei = improvement * self._normal_cdf(Z) + sigma * self._normal_pdf(Z)
-            ei[sigma == 0.0] = 0.0
-        
+        # Avoid division by zero
+        sigma_safe = np.where(sigma <= 1e-12, 1e-12, sigma)
+        f_best = float(np.max(self.y_samples))
+        improvement = mu - f_best - xi
+        Z = improvement / sigma_safe
+        ei = improvement * self._normal_cdf(Z) + sigma_safe * self._normal_pdf(Z)
+        # Where original sigma was zero, EI must be zero
+        ei[sigma <= 1e-12] = 0.0
         return ei
     
     def _normal_cdf(self, x):

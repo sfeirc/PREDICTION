@@ -24,6 +24,11 @@ data:
     - "ADAUSDT"
     - "XRPUSDT"
   
+  # Correlation pairs for cross-asset features
+  correlation_pairs:
+    - "ETHUSDT"
+    - "BNBUSDT"
+  
   # Multi-timeframe (tick to daily)
   timeframes:
     primary: "1m"
@@ -150,6 +155,17 @@ features:
       - "clustering_dynamic"
     states: 5  # Bull, Bear, Consolidation, Volatile, Crash
     use_regime_specific_models: true
+
+# ============================================================================
+# TARGET CONFIGURATION
+# ============================================================================
+target:
+  primary_horizon: 5  # 5-minute forward return
+  horizons: [5, 10, 15]  # Multi-horizon targets
+  up_threshold: 0.002  # +0.2% for up label
+  down_threshold: -0.002  # -0.2% for down label
+  balance_classes: true
+  balancing_method: "downsample"  # or "weights"
 
 # ============================================================================
 # ADVANCED ML MODELS
@@ -331,8 +347,14 @@ execution:
   # Latency optimization
   latency:
     target_ms: 100  # 100ms target
-    colocation: false  # Would need exchange proximity
+    colocation: true  # ✅ ENABLED - Co-location ready
     network_optimization: true
+    # --- Low latency extensions (added) ---
+    enable_low_latency: true         # ✅ ENABLED - Microsecond execution active
+    microseconds_target: 1000         # Target p99 latency in microseconds
+    time_sync: "ptp"                  # ptp | ntp (PTP = Precision Time Protocol)
+    venue: "binance"
+    clock_source: "steady_clock"      # reference clock for stamps
 
 # ============================================================================
 # ONLINE LEARNING & ADAPTATION

@@ -44,6 +44,10 @@ class FeatureEngineWorldClass:
             logger.info(f"   Removing {duplicates} duplicate timestamps...")
             df = df[~df.index.duplicated(keep='last')]
         
+        # Final check - ensure index is unique
+        if df.index.duplicated().any():
+            df = df.loc[~df.index.duplicated(keep='last')]
+        
         logger.info(f"   Base data: {len(df)} rows")
         
         # 1. Price-based features (multi-timeframe)
@@ -110,13 +114,28 @@ class FeatureEngineWorldClass:
             df[f'momentum_{window}m'] = df['close'] / df['close'].shift(window) - 1
         
         # Higher timeframe trends
+        # FIXED: Use reindex instead of join to avoid memory issues
         for tf in ['15m', '1h', '4h']:
             if tf in multi_tf_data:
                 tf_df = multi_tf_data[tf]
-                # Merge higher TF data (use _htf suffix to avoid conflict)
-                tf_return = tf_df['close'].pct_change().rename(f'return_{tf}_htf')
-                df = df.join(tf_return, how='left', rsuffix='_htf')
-                df[f'return_{tf}_htf'] = df[f'return_{tf}_htf'].ffill()
+                # Remove duplicates from higher timeframe data
+                if tf_df.index.duplicated().any():
+                    tf_df = tf_df[~tf_df.index.duplicated(keep='last')]
+                
+                # Reindex to match df index (faster and uses less memory)
+                tf_return = tf_df['close'].pct_change()
+                # Ensure index is unique before reindexing
+                if tf_return.index.duplicated().any():
+                    tf_return = tf_return[~tf_return.index.duplicated(keep='last')]
+                
+                # Use unique index first, then reindex to original (handles duplicates)
+                if df.index.duplicated().any():
+                    df_unique = df.index.unique()
+                    reindexed = tf_return.reindex(df_unique, method='ffill')
+                    # Map back to original index
+                    df[f'return_{tf}_htf'] = reindexed.reindex(df.index, method='ffill')
+                else:
+                    df[f'return_{tf}_htf'] = tf_return.reindex(df.index, method='ffill')
         
         return df
     
@@ -209,12 +228,27 @@ class FeatureEngineWorldClass:
         df['vol_of_vol'] = df['volatility_30m'].rolling(30).std()
         
         # Higher timeframe volatility (use _htf suffix)
+        # FIXED: Use reindex instead of join to avoid memory issues
         for tf in ['15m', '1h', '4h']:
             if tf in multi_tf_data:
                 tf_df = multi_tf_data[tf]
-                tf_vol = tf_df['close'].pct_change().rolling(20).std().rename(f'volatility_{tf}_htf')
-                df = df.join(tf_vol, how='left', rsuffix='_htf')
-                df[f'volatility_{tf}_htf'] = df[f'volatility_{tf}_htf'].ffill()
+                # Remove duplicates from higher timeframe data
+                if tf_df.index.duplicated().any():
+                    tf_df = tf_df[~tf_df.index.duplicated(keep='last')]
+                
+                tf_vol = tf_df['close'].pct_change().rolling(20).std()
+                # Ensure index is unique before reindexing
+                if tf_vol.index.duplicated().any():
+                    tf_vol = tf_vol[~tf_vol.index.duplicated(keep='last')]
+                
+                # Handle duplicate indices by reindexing to unique first
+                if df.index.duplicated().any():
+                    df_unique = df.index.unique()
+                    reindexed = tf_vol.reindex(df_unique, method='ffill')
+                    # Map back to original index (handles duplicates)
+                    df[f'volatility_{tf}_htf'] = reindexed.reindex(df.index, method='ffill')
+                else:
+                    df[f'volatility_{tf}_htf'] = tf_vol.reindex(df.index, method='ffill')
         
         return df
     
@@ -232,24 +266,61 @@ class FeatureEngineWorldClass:
                 if pair_df.index.duplicated().any():
                     pair_df = pair_df[~pair_df.index.duplicated(keep='last')]
                 
-                # Merge on index (inner join to get common timestamps)
-                merged = df[['close']].join(pair_df[['close']], how='inner', rsuffix=f'_{pair_name}')
-                
-                if len(merged) > 60:  # Need enough data for correlation
-                    # Price correlation
+                # Merge on index using reindex (more memory efficient)
+                # Get common index
+                common_idx = df.index.intersection(pair_df.index)
+                if len(common_idx) > 60:  # Need enough data for correlation
+                    pair_close = pair_df['close'].reindex(common_idx, method='ffill')
+                    df_close = df.loc[common_idx, 'close']
+                    
+                    # Price correlation (compute on common index, then reindex to full index)
                     corr_window = 60
-                    price_corr = merged['close'].rolling(corr_window).corr(merged[f'close_{pair_name}'])
-                    df[f'corr_{pair_name}'] = price_corr.reindex(df.index, fill_value=0)
+                    price_corr_values = []
+                    for i in range(len(common_idx)):
+                        start = max(0, i - corr_window + 1)
+                        window_close = df_close.iloc[start:i+1]
+                        window_pair = pair_close.iloc[start:i+1]
+                        if len(window_close) > 10:
+                            corr_val = window_close.corr(window_pair)
+                            price_corr_values.append(corr_val if not np.isnan(corr_val) else 0)
+                        else:
+                            price_corr_values.append(0)
+                    
+                    price_corr_series = pd.Series(price_corr_values, index=common_idx)
+                    # Ensure unique index before reindexing
+                    if df.index.duplicated().any():
+                        df_unique = df.loc[~df.index.duplicated(keep='last')]
+                        df[f'corr_{pair_name}'] = price_corr_series.reindex(df_unique.index, fill_value=0).reindex(df.index, method='ffill', fill_value=0)
+                    else:
+                        df[f'corr_{pair_name}'] = price_corr_series.reindex(df.index, fill_value=0)
                     
                     # Return correlation
-                    df_returns = merged['close'].pct_change()
-                    pair_returns = merged[f'close_{pair_name}'].pct_change()
-                    return_corr = df_returns.rolling(corr_window).corr(pair_returns)
-                    df[f'return_corr_{pair_name}'] = return_corr.reindex(df.index, fill_value=0)
+                    df_returns = df_close.pct_change()
+                    pair_returns = pair_close.pct_change()
+                    return_corr_values = []
+                    for i in range(len(common_idx)):
+                        start = max(0, i - corr_window + 1)
+                        window_df_ret = df_returns.iloc[start:i+1]
+                        window_pair_ret = pair_returns.iloc[start:i+1]
+                        if len(window_df_ret) > 10:
+                            corr_val = window_df_ret.corr(window_pair_ret)
+                            return_corr_values.append(corr_val if not np.isnan(corr_val) else 0)
+                        else:
+                            return_corr_values.append(0)
                     
-                    # Price spread (ratio change)
-                    spread = (merged['close'] / merged[f'close_{pair_name}']).pct_change()
-                    df[f'spread_{pair_name}'] = spread.reindex(df.index, fill_value=0)
+                    return_corr_series = pd.Series(return_corr_values, index=common_idx)
+                    # Ensure unique index before reindexing
+                    if df.index.duplicated().any():
+                        df_unique = df.loc[~df.index.duplicated(keep='last')]
+                        df[f'return_corr_{pair_name}'] = return_corr_series.reindex(df_unique.index, fill_value=0).reindex(df.index, method='ffill', fill_value=0)
+                        spread_series = ratio.pct_change()
+                        df[f'spread_{pair_name}'] = spread_series.reindex(df_unique.index, fill_value=0).reindex(df.index, method='ffill', fill_value=0)
+                    else:
+                        df[f'return_corr_{pair_name}'] = return_corr_series.reindex(df.index, fill_value=0)
+                        # Price spread (ratio change)
+                        ratio = df_close / pair_close
+                        spread = ratio.pct_change()
+                        df[f'spread_{pair_name}'] = spread.reindex(df.index, fill_value=0)
                 else:
                     # Not enough data - fill with zeros
                     df[f'corr_{pair_name}'] = 0
@@ -298,7 +369,9 @@ class FeatureEngineWorldClass:
         
         # Volatility regime
         vol_60m = df['close'].pct_change().rolling(60).std()
-        vol_percentile = vol_60m.rolling(1440).apply(lambda x: pd.Series(x).rank(pct=True).iloc[-1])
+        # Fixed: Use quantile instead of rank for better performance
+        vol_percentile = vol_60m.rolling(1440, min_periods=100).quantile(0.5) / vol_60m.rolling(1440, min_periods=100).max()
+        vol_percentile = vol_percentile.fillna(0.5)
         
         df['vol_regime'] = 'normal'
         df.loc[vol_percentile < 0.33, 'vol_regime'] = 'low_vol'
