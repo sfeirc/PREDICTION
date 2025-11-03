@@ -1,0 +1,38 @@
+name: CI Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run smoke test
+      run: |
+        python -c "import data_manager_worldclass; import feature_engine_worldclass; import model_ensemble_worldclass; print('✅ Imports successful')"
+    
+    - name: Validate config
+      run: |
+        python -c "import yaml; yaml.safe_load(open('config_ultimate.yaml')); print('✅ Config valid')"
+    
+    - name: Check code quality
+      run: |
+        python -m py_compile *.py
+        echo "✅ Syntax check passed"
+

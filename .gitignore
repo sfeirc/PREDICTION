@@ -20,66 +20,64 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environments
+# Virtual environments
 venv/
-ENV/
 env/
-.venv
-
-# Jupyter Notebook
-.ipynb_checkpoints
-*.ipynb
-
-# PyCharm
-.idea/
-
-# VS Code
-.vscode/
+ENV/
 
 # Data files
-data/raw/*
-data/processed/*
-!data/raw/.gitkeep
-!data/processed/.gitkeep
-
-# Model checkpoints
-models/*.pt
-models/*.pth
-models/*.pkl
-models/*.h5
-!models/.gitkeep
+data/raw/*.parquet
+data/raw/*.csv
+data/processed/*.parquet
+data/processed/*.csv
+*.parquet
+*.csv
 
 # Logs
 logs/*.log
-logs/*.png
+logs/*.txt
+logs/*.parquet
 logs/*.csv
-!logs/.gitkeep
+logs/*.png
+*.log
 
-# Weights & Biases
+# Model checkpoints
+checkpoints/
+models/*.pkl
+models/*.joblib
+models/*.h5
+*.pkl
+*.joblib
+*.h5
+
+# Experiment tracking
 wandb/
+catboost_info/
 
-# API Keys & Secrets
-.env
-*.key
-secrets.yaml
-config_private.yaml
-
-# Trading data
-trades/
-backtest_results/
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
+# Results (keep plots for README, ignore large CSV logs)
+# results/*.png  # Keep plots - they're in the README
+results/*.csv
+logs/*.csv
+
+# Cache
+.cache/
+*.cache
+
+# Jupyter
+.ipynb_checkpoints/
 
 # Temporary files
+tmp/
+temp/
 *.tmp
-*.temp
-*.swp
-*.swo
-*~
